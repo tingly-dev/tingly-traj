@@ -18,6 +18,7 @@ import {
   ListItemText,
   CircularProgress,
 } from '@mui/material';
+import ThemeSwitcher from './ThemeSwitcher';
 
 interface LayoutProps {
   onProjectChange: (project: string | undefined) => void;
@@ -56,12 +57,17 @@ export default function Layout({ onProjectChange, onSearchChange }: LayoutProps)
         }}
       >
         <Toolbar sx={{ flexDirection: 'column', alignItems: 'flex-start', py: 2, px: 2.5 }}>
-          <Typography variant="h5" sx={{ fontWeight: 600, mb: 0.5 }}>
-            cc-pick
-          </Typography>
-          <Typography variant="caption" sx={{ color: 'text.disabled' }}>
-            Claude Code Session Viewer
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', mb: 0.5 }}>
+            <Box>
+              <Typography variant="h5" sx={{ fontWeight: 600 }}>
+                cc-pick
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.disabled' }}>
+                Claude Code Session Viewer
+              </Typography>
+            </Box>
+            <ThemeSwitcher />
+          </Box>
         </Toolbar>
 
         <Box sx={{ px: 2.5, flex: 1, overflowY: 'auto' }}>
