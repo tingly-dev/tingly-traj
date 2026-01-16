@@ -57,6 +57,10 @@ export default function SessionList({ selectedProject, searchQuery }: SessionLis
       limit: rowsPerPage,
       offset: page * rowsPerPage,
     }),
+    staleTime: 30000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    placeholderData: undefined,
   });
 
   const sessions = data?.sessions ?? [];
@@ -106,7 +110,7 @@ export default function SessionList({ selectedProject, searchQuery }: SessionLis
         </Typography>
       </Stack>
 
-      <Stack spacing={1}>
+      <Stack spacing={1} key={`page-${page}-${rowsPerPage}`}>
         {sessions.map((session: SessionInfo) => (
           <Card
             key={session.sessionId}
