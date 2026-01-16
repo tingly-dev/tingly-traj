@@ -92,7 +92,7 @@ export default function Pagination({ count, page, rowsPerPage, onPageChange }: P
     <Box
       onClick={() => !isDisabled && !isActive && onPageChange(pageNum)}
       sx={{
-        minWidth: 36,
+        width: 36,
         height: 36,
         display: 'flex',
         alignItems: 'center',
@@ -107,6 +107,7 @@ export default function Pagination({ count, page, rowsPerPage, onPageChange }: P
         transition: 'all 0.15s ease',
         border: isActive ? 'none' : 1,
         borderColor: 'divider',
+        flexShrink: 0,
         '&:hover': !isDisabled && !isActive
           ? {
               bgcolor: 'action.hover',
@@ -145,6 +146,7 @@ export default function Pagination({ count, page, rowsPerPage, onPageChange }: P
           height: 36,
           border: 1,
           borderColor: 'divider',
+          flexShrink: 0,
           '&:hover:not(:disabled)': {
             bgcolor: 'action.hover',
             borderColor: 'primary.light',
@@ -159,7 +161,15 @@ export default function Pagination({ count, page, rowsPerPage, onPageChange }: P
   return (
     <Stack spacing={2} alignItems="center">
       {/* Page number navigation */}
-      <Stack spacing={1} direction="row" alignItems="center">
+      <Stack
+        spacing={1}
+        direction="row"
+        alignItems="center"
+        sx={{
+          minWidth: 460,
+          justifyContent: 'center',
+        }}
+      >
         <NavButton
           direction="first"
           isDisabled={page === 0}
@@ -179,9 +189,12 @@ export default function Pagination({ count, page, rowsPerPage, onPageChange }: P
                   key={`ellipsis-${idx}`}
                   sx={{
                     width: 36,
+                    height: 36,
                     display: 'flex',
                     justifyContent: 'center',
+                    alignItems: 'center',
                     color: 'text.disabled',
+                    flexShrink: 0,
                   }}
                 >
                   ...
