@@ -112,7 +112,7 @@ export const claudeFsService: ClaudeFsService = {
     search?: string;
     limit?: number;
     offset?: number;
-  }): Promise<SessionInfo[]> {
+  }): Promise<{ sessions: SessionInfo[]; total: number; hasMore: boolean }> {
     const entries = await readHistory();
     let filtered = entries.filter((e) => e.sessionId && e.project);
 
@@ -130,10 +130,11 @@ export const claudeFsService: ClaudeFsService = {
     // Sort by timestamp descending
     filtered.sort((a, b) => b.timestamp - a.timestamp);
 
+    const total = filtered.length;
     const offset = query?.offset ?? 0;
     const limit = query?.limit ?? 50;
 
-    return filtered
+    const sessions = filtered
       .slice(offset, offset + limit)
       .map((e) => ({
         sessionId: e.sessionId,
@@ -141,6 +142,12 @@ export const claudeFsService: ClaudeFsService = {
         project: e.project,
         timestamp: e.timestamp,
       }));
+
+    return {
+      sessions,
+      total,
+      hasMore: offset + limit < total,
+    };
   },
 
   // Get full session detail

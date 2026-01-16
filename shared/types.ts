@@ -37,3 +37,9 @@ export interface SessionsQuery {
   limit?: number;
   offset?: number;
 }
+
+export interface SessionsResponse {
+  sessions: SessionInfo[];
+  total: number;
+  hasMore: boolean;
+}

@@ -4,7 +4,7 @@ import { api } from '../services/api';
 import { exportSession } from '../services/export';
 import { formatDistanceToNow } from 'date-fns';
 import type { SessionInfo } from '../../shared/types';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Card,
@@ -15,26 +15,52 @@ import {
   Alert,
   IconButton,
   Stack,
+  FormControl,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import LoadingIcon from '@mui/icons-material/HourglassEmpty';
+import Pagination from './Pagination';
 
 interface SessionListProps {
   selectedProject?: string;
   searchQuery?: string;
 }
 
+const DEFAULT_ROWS_PER_PAGE = 20;
+const ROWS_PER_PAGE_OPTIONS = [10, 20, 50, 100];
+
 export default function SessionList({ selectedProject, searchQuery }: SessionListProps) {
   const [exportingSession, setExportingSession] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(() => {
+    const saved = localStorage.getItem('sessions-per-page');
+    return saved ? parseInt(saved, 10) : DEFAULT_ROWS_PER_PAGE;
+  });
 
-  const { data: sessions, isLoading, error } = useQuery({
-    queryKey: ['sessions', selectedProject, searchQuery],
+  // Reset to page 0 when filters change
+  useEffect(() => {
+    setPage(0);
+  }, [selectedProject, searchQuery]);
+
+  // Persist rows per page to localStorage
+  useEffect(() => {
+    localStorage.setItem('sessions-per-page', rowsPerPage.toString());
+  }, [rowsPerPage]);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['sessions', selectedProject, searchQuery, page, rowsPerPage],
     queryFn: () => api.getSessions({
       project: selectedProject,
       search: searchQuery,
-      limit: 100,
+      limit: rowsPerPage,
+      offset: page * rowsPerPage,
     }),
   });
+
+  const sessions = data?.sessions ?? [];
+  const totalSessions = data?.total ?? 0;
 
   const getProjectName = (path: string) => {
     return path.split('/').pop() || path;
@@ -76,12 +102,12 @@ export default function SessionList({ selectedProject, searchQuery }: SessionLis
           Sessions
         </Typography>
         <Typography variant="body2" sx={{ color: 'text.disabled' }}>
-          {sessions?.length || 0} sessions
+          {totalSessions.toLocaleString()} sessions
         </Typography>
       </Stack>
 
       <Stack spacing={1}>
-        {sessions?.map((session: SessionInfo) => (
+        {sessions.map((session: SessionInfo) => (
           <Card
             key={session.sessionId}
             component={Link}
@@ -153,12 +179,47 @@ export default function SessionList({ selectedProject, searchQuery }: SessionLis
           </Card>
         ))}
 
-        {sessions?.length === 0 && (
+        {sessions.length === 0 && !isLoading && (
           <Box sx={{ textAlign: 'center', py: 7.5, color: 'text.disabled' }}>
             <Typography>No sessions found</Typography>
           </Box>
         )}
       </Stack>
+
+      {totalSessions > 0 && (
+        <Stack spacing={2} sx={{ mt: 3 }} alignItems="center">
+          {/* Rows per page selector */}
+          <Stack direction="row" spacing={2} alignItems="center" sx={{ width: '100%', justifyContent: 'flex-end' }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
+              Sessions per page:
+            </Typography>
+            <FormControl size="small" sx={{ minWidth: 80 }}>
+              <Select
+                value={rowsPerPage}
+                onChange={(e) => {
+                  setRowsPerPage(Number(e.target.value));
+                  setPage(0);
+                }}
+                sx={{ fontSize: '0.875rem' }}
+              >
+                {ROWS_PER_PAGE_OPTIONS.map((option) => (
+                  <MenuItem key={option} value={option} sx={{ fontSize: '0.875rem' }}>
+                    {option}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Stack>
+
+          {/* Page number navigation */}
+          <Pagination
+            count={totalSessions}
+            page={page}
+            rowsPerPage={rowsPerPage}
+            onPageChange={setPage}
+          />
+        </Stack>
+      )}
     </Box>
   );
 }

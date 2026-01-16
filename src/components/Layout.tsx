@@ -17,8 +17,12 @@ import {
   ListItemButton,
   ListItemText,
   CircularProgress,
+  Fab,
+  Zoom,
 } from '@mui/material';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import ThemeSwitcher from './ThemeSwitcher';
+import { useState, useEffect, useRef } from 'react';
 
 interface LayoutProps {
   onProjectChange: (project: string | undefined) => void;
@@ -27,11 +31,30 @@ interface LayoutProps {
 
 export default function Layout({ onProjectChange, onSearchChange }: LayoutProps) {
   const navigate = useNavigate();
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const mainContentRef = useRef<HTMLDivElement>(null);
 
   const { data: projects, isLoading } = useQuery({
     queryKey: ['projects'],
     queryFn: () => api.getProjects(),
   });
+
+  // Handle scroll to show/hide the back-to-top button
+  useEffect(() => {
+    const container = mainContentRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      setShowScrollTop(container.scrollTop > 300);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const handleScrollToTop = () => {
+    mainContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const handleProjectChange = (value: string) => {
     onProjectChange(value === 'all' ? undefined : value);
@@ -134,15 +157,35 @@ export default function Layout({ onProjectChange, onSearchChange }: LayoutProps)
       </AppBar>
 
       <Box
+        ref={mainContentRef}
         component="main"
         sx={{
           flex: 1,
           overflowY: 'auto',
           bgcolor: 'background.default',
+          position: 'relative',
         }}
       >
         <Outlet />
       </Box>
+
+      {/* Back to top floating button */}
+      <Zoom in={showScrollTop}>
+        <Fab
+          size="medium"
+          color="primary"
+          onClick={handleScrollToTop}
+          sx={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            zIndex: 1000,
+          }}
+          title="Back to top"
+        >
+          <KeyboardArrowUpIcon />
+        </Fab>
+      </Zoom>
     </Box>
   );
 }

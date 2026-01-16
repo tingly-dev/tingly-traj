@@ -1,5 +1,5 @@
 // Types for Claude Code data structures
-import type { SessionInfo, SessionDetail, ProjectSummary } from '../../shared/types.ts';
+import type { SessionInfo, SessionDetail, ProjectSummary, SessionsResponse } from '../../shared/types.ts';
 
 export interface HistoryEntry {
   display: string;
@@ -27,7 +27,7 @@ export interface SessionMessage {
 
 export interface ClaudeFsService {
   getHistoryEntries(): Promise<HistoryEntry[]>;
-  getSessionInfos(query?: { project?: string; search?: string; limit?: number; offset?: number }): Promise<SessionInfo[]>;
+  getSessionInfos(query?: { project?: string; search?: string; limit?: number; offset?: number }): Promise<SessionsResponse>;
   getSessionDetail(sessionId: string, projectPath: string): Promise<SessionDetail | null>;
   getProjectSummaries(): Promise<ProjectSummary[]>;
   getRawSessionData(sessionId: string, projectPath: string): Promise<string | null>;

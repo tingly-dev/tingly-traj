@@ -1,5 +1,5 @@
 // API service for communicating with backend
-import type { SessionInfo, SessionDetail, ProjectSummary, SessionsQuery } from '../../shared/types.ts';
+import type { SessionDetail, ProjectSummary, SessionsQuery, SessionsResponse } from '../../shared/types.ts';
 
 const API_BASE = '/api';
 
@@ -13,7 +13,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 export const api = {
   // Get sessions with optional filters
-  async getSessions(query?: SessionsQuery): Promise<SessionInfo[]> {
+  async getSessions(query?: SessionsQuery): Promise<SessionsResponse> {
     const params = new URLSearchParams();
     if (query?.project) params.set('project', query.project);
     if (query?.search) params.set('search', query.search);
@@ -21,7 +21,7 @@ export const api = {
     if (query?.offset) params.set('offset', query.offset.toString());
 
     const url = `${API_BASE}/sessions${params.toString() ? `?${params}` : ''}`;
-    return fetchJson<SessionInfo[]>(url);
+    return fetchJson<SessionsResponse>(url);
   },
 
   // Get session detail
