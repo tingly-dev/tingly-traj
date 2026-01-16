@@ -70,7 +70,7 @@ export default function SessionList({ selectedProject, searchQuery }: SessionLis
   }
 
   return (
-    <Box sx={{ p: 3, maxWidth: 900, mx: 'auto' }}>
+    <Box sx={{ p: 3 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
         <Typography variant="h4" sx={{ fontWeight: 600 }}>
           Sessions
