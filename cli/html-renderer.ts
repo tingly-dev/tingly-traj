@@ -7,6 +7,12 @@ interface RenderOptions {
   theme?: 'light' | 'dark';
 }
 
+interface GroupedEntry {
+  id: string | null;
+  entries: ClaudeRawEntry[];
+  firstEntry: ClaudeRawEntry;
+}
+
 /**
  * Escape HTML special characters
  */
@@ -22,81 +28,46 @@ function escapeHtml(text: string): string {
 }
 
 /**
- * Format content for HTML display
+ * Group entries by message.id
  */
-function formatContent(entry: ClaudeRawEntry): string {
-  if (entry.type === 'summary') {
-    return `<div class="summary">
-      <span class="summary-icon">📋</span>
-      <span class="summary-text">${escapeHtml((entry as Record<string, unknown>).summary as string || 'Summary')}</span>
-    </div>`;
-  }
+function groupEntriesById(entries: { rawContent: string }[]): GroupedEntry[] {
+  const grouped = new Map<string | null, GroupedEntry>();
 
-  const content = entry.message?.content;
-  if (!content) {
-    return '<em class="no-content">No content</em>';
-  }
+  for (const roundEntry of entries) {
+    const parsed = JSON.parse(roundEntry.rawContent) as ClaudeRawEntry;
+    // Handle message.id which may be undefined, fall back to uuid
+    const messageId: string | null = (parsed.message && typeof parsed.message === 'object' && 'id' in parsed.message)
+      ? ((parsed.message.id as string | undefined) ?? parsed.uuid ?? null)
+      : (parsed.uuid ?? null);
 
-  if (typeof content === 'string') {
-    // Check for command messages
-    const commandMatch = content.match(/<command-name>([^<]+)<\/command-name>/);
-    if (commandMatch) {
-      const argsMatch = content.match(/<command-args>([^<]*)<\/command-args>/);
-      const args = argsMatch ? argsMatch[1].trim() : '';
-      return `<div class="command">
-        <span class="command-name">${escapeHtml(commandMatch[1])}</span>
-        ${args ? `<span class="command-args">${escapeHtml(args)}</span>` : ''}
-      </div>`;
-    }
-    return `<pre class="content-text">${escapeHtml(content)}</pre>`;
-  }
-
-  if (Array.isArray(content)) {
-    let html = '<div class="content-array">';
-
-    for (const item of content as Array<Record<string, unknown>>) {
-      const itemType = item.type as string;
-      if (itemType === 'text') {
-        html += `<div class="content-item text">${formatTextContent((item.text as string) || '')}</div>`;
-      } else if (itemType === 'tool_use') {
-        const toolName = (item.name as string) || 'unknown';
-        const toolInput = item.input;
-        const hasInput = toolInput && typeof toolInput === 'object' && Object.keys(toolInput).length > 0;
-
-        html += `<div class="content-item tool-use">
-          <span class="tool-badge">🔧 Tool Use</span>
-          <span class="tool-name">${escapeHtml(toolName)}</span>
-          ${hasInput ? `<pre class="tool-input-content">${escapeHtml(JSON.stringify(toolInput, null, 2))}</pre>` : ''}
-        </div>`;
-      } else if (itemType === 'tool_result') {
-        const isError = (item.is_error as boolean) || false;
-        const resultContent = item.content || '';
-        html += `<div class="content-item tool-result ${isError ? 'error' : ''}">
-          <span class="tool-badge">${isError ? '❌' : '✅'} Tool Result</span>
-          ${item.tool_use_id ? `<span class="tool-id">${escapeHtml(item.tool_use_id as string)}</span>` : ''}
-          <pre class="result-content">${escapeHtml(String(resultContent))}</pre>
-        </div>`;
-      } else if (itemType === 'thinking') {
-        const thinkingText = (item.text as string) || '';
-        // Only show thinking if there's actual content
-        if (thinkingText.trim()) {
-          html += `<details class="content-item thinking" open>
-            <summary>💭 Thinking</summary>
-            <pre class="thinking-content">${escapeHtml(thinkingText)}</pre>
-          </details>`;
-        }
-      } else {
-        html += `<div class="content-item unknown">
-          <span class="item-type">${escapeHtml(itemType)}</span>
-        </div>`;
-      }
+    if (!grouped.has(messageId)) {
+      grouped.set(messageId, {
+        id: messageId,
+        entries: [],
+        firstEntry: parsed,
+      });
     }
 
-    html += '</div>';
-    return html;
+    grouped.get(messageId)!.entries.push(parsed);
   }
 
-  return `<pre class="content-json">${escapeHtml(JSON.stringify(content, null, 2))}</pre>`;
+  // Convert map to array, preserving order
+  const result: GroupedEntry[] = [];
+  const seenIds = new Set<string | null>();
+
+  for (const roundEntry of entries) {
+    const parsed = JSON.parse(roundEntry.rawContent) as ClaudeRawEntry;
+    const messageId: string | null = (parsed.message && typeof parsed.message === 'object' && 'id' in parsed.message)
+      ? ((parsed.message.id as string | undefined) ?? parsed.uuid ?? null)
+      : (parsed.uuid ?? null);
+
+    if (!seenIds.has(messageId)) {
+      seenIds.add(messageId);
+      result.push(grouped.get(messageId)!);
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -131,12 +102,64 @@ function getMessageTypeInfo(type: string): { icon: string; label: string; class:
 }
 
 /**
- * Generate HTML for a single entry
+ * Generate HTML for a grouped entry (combines multiple entries with same message.id)
  */
-function renderEntry(entry: ClaudeRawEntry, index: number): string {
-  const typeInfo = getMessageTypeInfo(entry.type);
-  const timestamp = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '';
-  const uuid = entry.uuid ? `<span class="uuid" title="${escapeHtml(entry.uuid)}">${entry.uuid.substring(0, 8)}...</span>` : '';
+function renderGroupedEntry(grouped: GroupedEntry): string {
+  const firstEntry = grouped.firstEntry;
+  const typeInfo = getMessageTypeInfo(firstEntry.type);
+
+  // Use timestamp from first entry and uuid from first entry
+  const timestamp = firstEntry.timestamp ? new Date(firstEntry.timestamp).toLocaleString() : '';
+  const uuid = firstEntry.uuid ? `<span class="uuid" title="${escapeHtml(firstEntry.uuid)}">${firstEntry.uuid.substring(0, 8)}...</span>` : '';
+
+  // Combine all content from entries with same id
+  let combinedContent = '<div class="content-array">';
+
+  for (const entry of grouped.entries) {
+    const content = entry.message?.content;
+    if (!content) continue;
+
+    if (Array.isArray(content)) {
+      for (const item of content as Array<Record<string, unknown>>) {
+        const itemType = item.type as string;
+        if (itemType === 'text') {
+          combinedContent += `<div class="content-item text">${formatTextContent((item.text as string) || '')}</div>`;
+        } else if (itemType === 'tool_use') {
+          const toolName = (item.name as string) || 'unknown';
+          const toolInput = item.input;
+          const hasInput = toolInput && typeof toolInput === 'object' && Object.keys(toolInput).length > 0;
+
+          combinedContent += `<div class="content-item tool-use">
+            <span class="tool-badge">🔧 Tool Use</span>
+            <span class="tool-name">${escapeHtml(toolName)}</span>
+            ${hasInput ? `<pre class="tool-input-content">${escapeHtml(JSON.stringify(toolInput, null, 2))}</pre>` : ''}
+          </div>`;
+        } else if (itemType === 'tool_result') {
+          const isError = (item.is_error as boolean) || false;
+          const resultContent = item.content || '';
+          combinedContent += `<div class="content-item tool-result ${isError ? 'error' : ''}">
+            <span class="tool-badge">${isError ? '❌' : '✅'} Tool Result</span>
+            ${item.tool_use_id ? `<span class="tool-id">${escapeHtml(item.tool_use_id as string)}</span>` : ''}
+            <pre class="result-content">${escapeHtml(String(resultContent))}</pre>
+          </div>`;
+        } else if (itemType === 'thinking') {
+          const thinkingText = (item.text as string) || '';
+          if (thinkingText.trim()) {
+            combinedContent += `<details class="content-item thinking" open>
+              <summary>💭 Thinking</summary>
+              <pre class="thinking-content">${escapeHtml(thinkingText)}</pre>
+            </details>`;
+          }
+        } else {
+          combinedContent += `<div class="content-item unknown">
+            <span class="item-type">${escapeHtml(itemType)}</span>
+          </div>`;
+        }
+      }
+    }
+  }
+
+  combinedContent += '</div>';
 
   return `
     <div class="entry ${typeInfo.class}">
@@ -146,10 +169,11 @@ function renderEntry(entry: ClaudeRawEntry, index: number): string {
         <span class="entry-meta">
           ${uuid}
           ${timestamp ? `<span class="timestamp">${timestamp}</span>` : ''}
+          ${grouped.entries.length > 1 ? `<span class="group-info">${grouped.entries.length} parts</span>` : ''}
         </span>
       </div>
       <div class="entry-content">
-        ${formatContent(entry)}
+        ${combinedContent}
       </div>
     </div>
   `;
@@ -161,11 +185,11 @@ function renderEntry(entry: ClaudeRawEntry, index: number): string {
 export function renderRoundToHtml(round: Round, options: RenderOptions = {}): string {
   const { title = `Round #${round.roundNumber}`, theme = 'light' } = options;
 
-  const entriesHtml = round.entries.map((entry, i) => {
-    // Reconstruct entry from raw content
-    const parsed = JSON.parse(entry.rawContent) as ClaudeRawEntry;
-    return renderEntry(parsed, i);
-  }).join('\n');
+  // Group entries by message.id
+  const groupedEntries = groupEntriesById(round.entries);
+
+  // Render grouped entries
+  const entriesHtml = groupedEntries.map(g => renderGroupedEntry(g)).join('\n');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -266,6 +290,15 @@ export function renderRoundToHtml(round: Round, options: RenderOptions = {}): st
       gap: 15px;
       color: var(--text-secondary);
       font-size: 0.85em;
+    }
+
+    .group-info {
+      background: var(--accent-color);
+      color: white;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.75em;
+      font-weight: 600;
     }
 
     .uuid {
