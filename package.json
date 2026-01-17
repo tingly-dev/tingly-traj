@@ -3,13 +3,17 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "bin": {
+    "cc-pick-cli": "./cli/index.ts"
+  },
   "scripts": {
     "dev": "concurrently \"pnpm:dev:*\"",
     "dev:server": "tsx watch server/index.ts",
     "dev:client": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cli": "tsx cli/index.ts"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
