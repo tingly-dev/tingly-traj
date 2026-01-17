@@ -29,27 +29,27 @@ Once started via `pnpm dev`, access the web UI at `http://localhost:5173` to bro
 ### List all rounds
 
 ```bash
-pnpm cli list traj-yz-cc-tb/tb-bugfix/tb-bugfix-ci.jsonl
+pnpm cli list path/to/cc-session.jsonl
 ```
 
 ### Extract rounds
 
 ```bash
 # Extract all rounds → outputs: {basename}-rounds.json
-pnpm cli extract traj-yz-cc-tb/tb-bugfix/tb-bugfix-ci.jsonl -o ./output
+pnpm cli extract path/to/cc-session.jsonl -o ./output
 
 # Extract specific round → outputs to stdout
-pnpm cli extract traj-yz-cc-tb/tb-bugfix/tb-bugfix-ci.jsonl -r 0 > round-0.jsonl
+pnpm cli extract path/to/cc-session.jsonl -r 0 > round-0.jsonl
 
 # Search by keyword → outputs: {basename}-rounds-{first}-{last}.json
-pnpm cli extract traj-yz-cc-tb/tb-bugfix/tb-bugfix-ci.jsonl -k "bugfix" -o ./output
+pnpm cli extract path/to/cc-session.jsonl -k "bugfix" -o ./output
 ```
 
 ### Render HTML
 
 ```bash
 # Render single file → outputs: {basename}.html (single page with TOC)
-pnpm cli render ./output/tb-bugfix-ci-rounds.json -o ./html
+pnpm cli render ./output/cc-session.jsonl -o ./html
 
 # Batch render directory → scans for *-rounds.json, renders each to HTML
 pnpm cli render-all ./output -o ./html --theme dark
