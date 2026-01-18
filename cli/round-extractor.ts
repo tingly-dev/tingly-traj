@@ -2,6 +2,118 @@
 import type { ClaudeRawEntry, Round, RoundEntry, RoundListOutput } from './types.ts';
 import * as fs from 'node:fs/promises';
 
+export interface SystemEntryInput {
+  type: string;
+  uuid?: string;
+  message?: {
+    role: string;
+    content: string;
+  };
+  parentUuid?: string | null;
+  isSidechain?: boolean;
+  userType?: string;
+  cwd?: string;
+  sessionId?: string;
+  version?: string;
+  gitBranch?: string;
+  timestamp?: string;
+  thinkingMetadata?: {
+    level?: string;
+    disabled?: boolean;
+    triggers?: unknown[];
+  };
+  todos?: unknown[];
+  [key: string]: unknown;
+}
+
+// Fields that should be extracted from actual session entries
+const CONTEXT_FIELDS = [
+  'cwd',
+  'sessionId',
+  'version',
+  'gitBranch',
+  'userType',
+  'isSidechain',
+  'thinkingMetadata',
+  'todos',
+] as const;
+
+export function extractContextFields(entries: ClaudeRawEntry[]): Partial<ClaudeRawEntry> {
+  if (entries.length === 0) {
+    return {};
+  }
+
+  // Find first entry with context fields (usually the first user or system entry)
+  for (const entry of entries) {
+    const context: Partial<ClaudeRawEntry> = {};
+
+    for (const field of CONTEXT_FIELDS) {
+      if (field in entry && entry[field] !== undefined) {
+        context[field] = entry[field];
+      }
+    }
+
+    // If we found at least one context field, return it
+    if (Object.keys(context).length > 0) {
+      return context;
+    }
+  }
+
+  return {};
+}
+
+export async function loadSystemEntries(filePath: string, contextFields?: Partial<ClaudeRawEntry>): Promise<ClaudeRawEntry[]> {
+  const content = await fs.readFile(filePath, 'utf-8');
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(content);
+  } catch (error) {
+    throw new Error(`Invalid JSON in system file: ${filePath}`);
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error(`System file must contain a JSON array: ${filePath}`);
+  }
+
+  if (parsed.length === 0) {
+    return [];
+  }
+
+  const entries: ClaudeRawEntry[] = [];
+
+  for (const item of parsed) {
+    if (typeof item !== 'object' || item === null) {
+      throw new Error(`Invalid entry in system file: ${filePath}`);
+    }
+
+    const entry = { ...item } as SystemEntryInput;
+
+    // Merge context fields from actual session (override system file values)
+    if (contextFields) {
+      for (const field of CONTEXT_FIELDS) {
+        if (field in contextFields) {
+          (entry as any)[field] = contextFields[field];
+        }
+      }
+    }
+
+    // Augment with uuid if missing
+    if (!entry.uuid) {
+      entry.uuid = crypto.randomUUID();
+    }
+
+    // Ensure type is set
+    if (!entry.type) {
+      entry.type = 'system';
+    }
+
+    entries.push(entry as ClaudeRawEntry);
+  }
+
+  return entries;
+}
+
 function parseJSONL(line: string): ClaudeRawEntry | null {
   try {
     return JSON.parse(line) as ClaudeRawEntry;
@@ -217,10 +329,59 @@ export function listRounds(rounds: Round[], filePath: string): RoundListOutput {
   };
 }
 
-export function extractRound(rounds: Round[], roundNumber: number): string | null {
+export function extractRound(rounds: Round[], roundNumber: number, systemEntries?: ClaudeRawEntry[]): string | null {
   const round = rounds.find((r) => r.roundNumber === roundNumber);
   if (!round) {
     return null;
   }
-  return round.entries.map((e) => e.rawContent).join('\n');
+  const lines: string[] = [];
+
+  // Prepend system entries
+  if (systemEntries && systemEntries.length > 0) {
+    for (const entry of systemEntries) {
+      lines.push(JSON.stringify(entry));
+    }
+  }
+
+  // Add round entries
+  for (const e of round.entries) {
+    lines.push(e.rawContent);
+  }
+
+  return lines.join('\n');
+}
+
+export function prependSystemEntries(rounds: Round[], systemEntries: ClaudeRawEntry[]): Round[] {
+  if (systemEntries.length === 0) {
+    return rounds;
+  }
+
+  return rounds.map((round) => {
+    const systemRoundEntries: RoundEntry[] = systemEntries.map((entry) => {
+      let displayContent: string | undefined;
+      const content = entry.message?.content;
+      if (typeof content === 'string') {
+        displayContent = content.substring(0, 100);
+      } else if (Array.isArray(content)) {
+        const textItem = content.find((item: any) => item.type === 'text');
+        if (textItem?.text) {
+          displayContent = textItem.text.substring(0, 100);
+        }
+      }
+
+      return {
+        type: entry.type,
+        uuid: entry.uuid || crypto.randomUUID(),
+        parentUuid: null,
+        timestamp: entry.timestamp || new Date().toISOString(),
+        rawContent: JSON.stringify(entry),
+        displayContent,
+      };
+    });
+
+    return {
+      ...round,
+      entries: [...systemRoundEntries, ...round.entries],
+    };
+  });
 }

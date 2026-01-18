@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // CLI for extracting and rendering rounds from Claude Code session data
-import { readSessionFile, extractRounds, listRounds, extractRound } from './round-extractor.ts';
+import { readSessionFile, extractRounds, listRounds, extractRound, prependSystemEntries, loadSystemEntries, extractContextFields } from './round-extractor.ts';
 import { renderFileToHtml } from './html-renderer.ts';
 import type { RoundListOutput, Round } from './types.ts';
 import * as fs from 'node:fs/promises';
@@ -20,6 +20,7 @@ Options for extract:
   -o, --output <dir>             Output directory (default: ./output)
   -r, --round <num>              Extract specific round to stdout
   -k, --keyword <keyword>        Extract rounds matching keyword
+  -s, --system <file>            Prepend system entries from JSON file
 
 Options for render/render-all:
   -o, --output <dir>             Output directory (default: ./output)
@@ -37,6 +38,9 @@ Examples:
 
   # Extract rounds by keyword (filename uses round range)
   pnpm cli extract traj-yz-cc-tb/tb-bugfix/tb-bugfix-ci.jsonl -k "bugfix" -o ./output
+
+  # Extract with system prompt prepended
+  pnpm cli extract session.jsonl -s system.json -o ./output
 
   # Render a single rounds.json to HTML
   pnpm cli render ./output/tb-bugfix-ci-rounds.json -o ./html --theme dark
@@ -110,6 +114,7 @@ async function main(): Promise<void> {
     let outputDir = './output';
     let roundNum: number | null = null;
     let keyword: string | null = null;
+    let systemFile: string | null = null;
 
     for (let i = 0; i < argsRest.length; i++) {
       if (argsRest[i] === '-o' || argsRest[i] === '--output') {
@@ -141,10 +146,18 @@ async function main(): Promise<void> {
           console.error('❌ Error: --keyword requires a string');
           process.exit(1);
         }
+      } else if (argsRest[i] === '-s' || argsRest[i] === '--system') {
+        if (i + 1 < argsRest.length) {
+          systemFile = argsRest[i + 1];
+          i++;
+        } else {
+          console.error('❌ Error: --system requires a file path');
+          process.exit(1);
+        }
       }
     }
 
-    return { outputDir, roundNum, keyword };
+    return { outputDir, roundNum, keyword, systemFile };
   };
 
   if (command === 'list') {
@@ -172,19 +185,45 @@ async function main(): Promise<void> {
     }
 
     const filePath = args[1];
-    const { outputDir, roundNum, keyword } = parseExtractOptions(args.slice(2));
+    const { outputDir, roundNum, keyword, systemFile } = parseExtractOptions(args.slice(2));
 
     try {
+      // Read session file first to extract context fields
       const entries = await readSessionFile(filePath);
-      const allRounds = extractRounds(entries);
+      const contextFields = extractContextFields(entries);
+
+      // Load system entries if provided, merging with context from actual session
+      let systemEntries: any[] = [];
+      if (systemFile) {
+        try {
+          systemEntries = await loadSystemEntries(systemFile, contextFields);
+          if (systemEntries.length > 0) {
+            console.log(`📋 Loaded ${systemEntries.length} system entr${systemEntries.length === 1 ? 'y' : 'ies'} from: ${systemFile}`);
+            if (Object.keys(contextFields).length > 0) {
+              console.log(`   Merged context fields: ${Object.keys(contextFields).join(', ')}`);
+            }
+          }
+        } catch (error) {
+          console.error(`❌ Error loading system file: ${(error as Error).message}`);
+          process.exit(1);
+        }
+      }
+
+      let allRounds = extractRounds(entries);
 
       if (allRounds.length === 0) {
         console.log('⚠️  No rounds found in file');
         process.exit(0);
       }
 
+      // Prepend system entries to all rounds if provided
+      if (systemEntries.length > 0) {
+        allRounds = prependSystemEntries(allRounds, systemEntries);
+      }
+
       // Extract specific round (output to stdout)
       if (roundNum !== null) {
+        // Don't pass systemEntries here since they're already prepended to allRounds
         const content = extractRound(allRounds, roundNum);
         if (content === null) {
           console.error(`❌ Error: Round ${roundNum} not found. Total rounds: ${allRounds.length}`);
