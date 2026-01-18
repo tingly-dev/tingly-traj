@@ -12,8 +12,8 @@ Usage: tingly-traj-cli <command> [options]
 Commands:
   list <file>                    List all rounds in a session file
   extract <file> [options]       Extract rounds
-  render <rounds.json> [options] Render rounds.json to a single HTML
-  render-all <dir> [options]     Scan dir for *-rounds.json and batch render
+  render <rounds.json> [options] Render a .json file to a single HTML
+  render-all <dir> [options]     Scan dir for .json files and batch render
   help                           Show this help message
 
 Options for extract:
@@ -21,6 +21,7 @@ Options for extract:
   -r, --round <num>              Extract specific round to stdout
   -k, --keyword <keyword>        Extract rounds matching keyword
   -s, --system <file>            Prepend system entries from JSON file
+  --render                       Auto-render extracted rounds to HTML
 
 Options for render/render-all:
   -o, --output <dir>             Output directory (default: ./output)
@@ -30,7 +31,7 @@ Examples:
   # List all rounds
   pnpm cli list traj-yz-cc-tb/tb-bugfix/tb-bugfix-ci.jsonl
 
-  # Extract all rounds to rounds.json
+  # Extract all rounds to tb-bugfix-ci.json
   pnpm cli extract traj-yz-cc-tb/tb-bugfix/tb-bugfix-ci.jsonl -o ./output
 
   # Extract a specific round (to stdout)
@@ -42,10 +43,13 @@ Examples:
   # Extract with system prompt prepended
   pnpm cli extract session.jsonl -s system.json -o ./output
 
-  # Render a single rounds.json to HTML
-  pnpm cli render ./output/tb-bugfix-ci-rounds.json -o ./html --theme dark
+  # Extract and auto-render to HTML
+  pnpm cli extract session.jsonl --render --theme dark -o ./output
 
-  # Batch render all *-rounds.json in a directory
+  # Render a single .json file to HTML
+  pnpm cli render ./output/tb-bugfix-ci.json -o ./html --theme dark
+
+  # Batch render all .json files in a directory
   pnpm cli render-all ./output -o ./html --theme dark
 `;
 
@@ -115,6 +119,8 @@ async function main(): Promise<void> {
     let roundNum: number | null = null;
     let keyword: string | null = null;
     let systemFile: string | null = null;
+    let render = false;
+    let theme: 'light' | 'dark' = 'light';
 
     for (let i = 0; i < argsRest.length; i++) {
       if (argsRest[i] === '-o' || argsRest[i] === '--output') {
@@ -154,10 +160,23 @@ async function main(): Promise<void> {
           console.error('❌ Error: --system requires a file path');
           process.exit(1);
         }
+      } else if (argsRest[i] === '--render') {
+        render = true;
+      } else if (argsRest[i] === '--theme') {
+        if (i + 1 < argsRest.length) {
+          const t = argsRest[i + 1];
+          if (t === 'light' || t === 'dark') {
+            theme = t;
+          } else {
+            console.error('❌ Error: --theme must be "light" or "dark"');
+            process.exit(1);
+          }
+          i++;
+        }
       }
     }
 
-    return { outputDir, roundNum, keyword, systemFile };
+    return { outputDir, roundNum, keyword, systemFile, render, theme };
   };
 
   if (command === 'list') {
@@ -185,7 +204,7 @@ async function main(): Promise<void> {
     }
 
     const filePath = args[1];
-    const { outputDir, roundNum, keyword, systemFile } = parseExtractOptions(args.slice(2));
+    const { outputDir, roundNum, keyword, systemFile, render, theme } = parseExtractOptions(args.slice(2));
 
     try {
       // Read session file first to extract context fields
@@ -247,12 +266,12 @@ async function main(): Promise<void> {
         await ensureDir(outputDir);
 
         const basename = path.basename(filePath, '.jsonl');
-        // Use round range in filename (e.g., tb-bugfix-ci-rounds-0-3.json)
+        // Use numeric suffix in filename (e.g., tb-bugfix-ci.0.json or tb-bugfix-ci.0-3.json)
         const firstRound = matchedRounds[0].roundNumber;
         const lastRound = matchedRounds[matchedRounds.length - 1].roundNumber;
         const filename = matchedRounds.length === 1
-          ? `${basename}-round-${firstRound}.json`
-          : `${basename}-rounds-${firstRound}-${lastRound}.json`;
+          ? `${basename}.${firstRound}.json`
+          : `${basename}.${firstRound}-${lastRound}.json`;
         const outputPath = path.join(outputDir, filename);
         await fs.writeFile(outputPath, JSON.stringify(matchedRounds, null, 2), 'utf-8');
 
@@ -262,6 +281,22 @@ async function main(): Promise<void> {
           console.log(`  Round #${round.roundNumber}: ${round.summary.substring(0, 60)}${round.summary.length > 60 ? '...' : ''}`);
         }
         console.log('');
+
+        // Auto-render if requested
+        if (render) {
+          const htmlOutputDir = path.join(outputDir, 'html');
+          await ensureDir(htmlOutputDir);
+
+          console.log(`\n📁 Rendering ${matchedRounds.length} rounds to HTML`);
+          console.log(`   Output: ${htmlOutputDir} (${theme} theme)`);
+
+          const html = renderFileToHtml(matchedRounds, outputPath, { theme });
+          const htmlFilename = path.basename(filename, '.json');
+          const htmlPath = path.join(htmlOutputDir, `${htmlFilename}.html`);
+          await fs.writeFile(htmlPath, html, 'utf-8');
+
+          console.log(`\n✅ Rendered to: ${htmlPath}\n`);
+        }
         process.exit(0);
       }
 
@@ -269,7 +304,7 @@ async function main(): Promise<void> {
       await ensureDir(outputDir);
 
       const basename = path.basename(filePath, '.jsonl');
-      const outputPath = path.join(outputDir, `${basename}-rounds.json`);
+      const outputPath = path.join(outputDir, `${basename}.json`);
       await fs.writeFile(outputPath, JSON.stringify(allRounds, null, 2), 'utf-8');
 
       console.log(`\n✅ Extracted ${allRounds.length} rounds to: ${outputPath}\n`);
@@ -277,6 +312,21 @@ async function main(): Promise<void> {
         console.log(`  Round #${round.roundNumber}: ${round.summary.substring(0, 60)}${round.summary.length > 60 ? '...' : ''}`);
       }
       console.log('');
+
+      // Auto-render if requested
+      if (render) {
+        const htmlOutputDir = path.join(outputDir, 'html');
+        await ensureDir(htmlOutputDir);
+
+        console.log(`\n📁 Rendering ${allRounds.length} rounds to HTML`);
+        console.log(`   Output: ${htmlOutputDir} (${theme} theme)`);
+
+        const html = renderFileToHtml(allRounds, outputPath, { theme });
+        const htmlPath = path.join(htmlOutputDir, `${basename}.html`);
+        await fs.writeFile(htmlPath, html, 'utf-8');
+
+        console.log(`\n✅ Rendered to: ${htmlPath}\n`);
+      }
     } catch (error) {
       console.error(`❌ Error: ${(error as Error).message}`);
       process.exit(1);
@@ -331,16 +381,16 @@ async function main(): Promise<void> {
     try {
       await ensureDir(outputDir);
 
-      // Scan directory for *-rounds.json files
+      // Scan directory for .json files
       const files = await fs.readdir(inputDir);
-      const roundsJsonFiles = files.filter(f => f.endsWith('-rounds.json'));
+      const roundsJsonFiles = files.filter(f => f.endsWith('.json'));
 
       if (roundsJsonFiles.length === 0) {
-        console.log('⚠️  No *-rounds.json files found in directory');
+        console.log('⚠️  No .json files found in directory');
         process.exit(0);
       }
 
-      console.log(`\n📁 Found ${roundsJsonFiles.length} rounds.json files`);
+      console.log(`\n📁 Found ${roundsJsonFiles.length} .json files`);
       console.log(`   Input: ${inputDir}`);
       console.log(`   Output: ${outputDir} (${theme} theme)`);
       console.log('─'.repeat(80));
