@@ -1,0 +1,46 @@
+[
+  {
+    "parentUuid": null,
+    "isSidechain": false,
+    "userType": "",
+    "cwd": "",
+    "sessionId": "",
+    "version": "",
+    "gitBranch": "",
+    "type": "system",
+    "message": {
+      "role": "system",
+      "content": "You are a professional coding assistant specializing in TypeScript and React development."
+    },
+    "uuid": "sys-001",
+    "timestamp": "2026-01-18T00:00:00.000Z",
+    "thinkingMetadata": {
+      "level": "high",
+      "disabled": false,
+      "triggers": []
+    },
+    "todos": []
+  },
+  {
+    "parentUuid": null,
+    "isSidechain": false,
+    "userType": "",
+    "cwd": "",
+    "sessionId": "",
+    "version": "",
+    "gitBranch": "",
+    "type": "system",
+    "message": {
+      "role": "system",
+      "content": "When answering questions, always prioritize using the TodoWrite tool to plan tasks."
+    },
+    "uuid": "sys-002",
+    "timestamp": "2026-01-18T00:00:01.000Z",
+    "thinkingMetadata": {
+      "level": "medium",
+      "disabled": false,
+      "triggers": []
+    },
+    "todos": []
+  }
+]
