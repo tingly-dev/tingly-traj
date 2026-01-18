@@ -118,10 +118,55 @@ function getMessageTypeInfo(type: string): { icon: string; label: string; class:
 }
 
 /**
+ * Check if a grouped entry is effectively empty (no meaningful content)
+ */
+function isEmptyEntry(grouped: GroupedEntry): boolean {
+  const content = grouped.firstEntry.message?.content;
+
+  // No content at all
+  if (!content) return true;
+
+  // String content - check if empty or only whitespace
+  if (typeof content === 'string') {
+    return !content.trim();
+  }
+
+  // Array content - check if all items are empty
+  if (Array.isArray(content)) {
+    for (const item of content as Array<Record<string, unknown>>) {
+      const itemType = item.type as string;
+      if (itemType === 'text') {
+        if ((item.text as string)?.trim()) return false;
+      } else if (itemType === 'tool_use') {
+        // tool_use with input is not empty
+        const toolInput = item.input;
+        if (toolInput && typeof toolInput === 'object' && Object.keys(toolInput).length > 0) {
+          return false;
+        }
+      } else if (itemType === 'tool_result') {
+        // tool_result with content is not empty
+        if (item.content) return false;
+      } else if (itemType === 'thinking') {
+        if ((item.text as string)?.trim()) return false;
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Generate HTML for a grouped entry (combines multiple entries with same message.id)
  */
 function renderGroupedEntry(grouped: GroupedEntry): string {
   const firstEntry = grouped.firstEntry;
+
+  // Skip empty system entries
+  if (firstEntry.type === 'system' && isEmptyEntry(grouped)) {
+    return '';
+  }
+
   const typeInfo = getMessageTypeInfo(firstEntry.type);
 
   // Use timestamp from first entry and uuid from first entry
@@ -210,7 +255,7 @@ export function renderRoundToHtml(round: Round, options: RenderOptions = {}): st
   const groupedEntries = groupEntriesById(round.entries);
 
   // Render grouped entries
-  const entriesHtml = groupedEntries.map(g => renderGroupedEntry(g)).join('\n');
+  const entriesHtml = groupedEntries.map(g => renderGroupedEntry(g)).filter(html => html).join('\n');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -543,7 +588,7 @@ export function renderFileToHtml(rounds: Round[], sourceFile: string, options: R
   // Render all rounds
   const roundsHtml = rounds.map((round) => {
     const groupedEntries = groupEntriesById(round.entries);
-    const entriesHtml = groupedEntries.map(g => renderGroupedEntry(g)).join('\n');
+    const entriesHtml = groupedEntries.map(g => renderGroupedEntry(g)).filter(html => html).join('\n');
 
     return `
     <div class="round" id="round-${round.roundNumber}">
@@ -624,9 +669,6 @@ export function renderFileToHtml(rounds: Round[], sourceFile: string, options: R
       border-radius: 12px;
       margin-bottom: 30px;
       border: 1px solid var(--border-color);
-      position: sticky;
-      top: 20px;
-      z-index: 100;
     }
 
     .brand {
