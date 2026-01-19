@@ -147,7 +147,8 @@ function isEmptyEntry(grouped: GroupedEntry): boolean {
         // tool_result with content is not empty
         if (item.content) return false;
       } else if (itemType === 'thinking') {
-        if ((item.text as string)?.trim()) return false;
+        // Support both old format (text) and new format (thinking field)
+        if ((item.thinking as string)?.trim() || (item.text as string)?.trim()) return false;
       }
     }
     return true;
@@ -208,10 +209,13 @@ function renderGroupedEntry(grouped: GroupedEntry): string {
             <pre class="result-content">${escapeHtml(String(resultContent))}</pre>
           </div>`;
         } else if (itemType === 'thinking') {
-          const thinkingText = (item.text as string) || '';
+          // Support both old format (text) and new format (thinking field)
+          const thinkingText = ((item.thinking as string) || (item.text as string) || '');
           if (thinkingText.trim()) {
             combinedContent += `<details class="content-item thinking" open>
-              <summary>💭 Thinking</summary>
+              <summary>
+                <span class="tool-badge">💭 Thinking</span>
+              </summary>
               <pre class="thinking-content">${escapeHtml(thinkingText)}</pre>
             </details>`;
           }
@@ -471,10 +475,13 @@ export function renderRoundToHtml(round: Round, options: RenderOptions = {}): st
       border-left-color: #a855f7;
     }
 
+    .thinking .tool-badge { background: #a855f7; color: white; }
+
     .thinking summary {
       cursor: pointer;
       font-weight: 600;
-      color: #a855f7;
+      display: flex;
+      align-items: center;
     }
 
     .thinking-content {
@@ -893,10 +900,13 @@ export function renderFileToHtml(rounds: Round[], sourceFile: string, options: R
       border-left-color: #a855f7;
     }
 
+    .thinking .tool-badge { background: #a855f7; color: white; }
+
     .thinking summary {
       cursor: pointer;
       font-weight: 600;
-      color: #a855f7;
+      display: flex;
+      align-items: center;
     }
 
     .thinking-content {
