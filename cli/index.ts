@@ -12,7 +12,7 @@ Usage: tingly-traj-cli <command> [options]
 Commands:
   list <file>                    List all rounds in a session file
   extract <file> [options]       Extract rounds
-  render <rounds.json> [options] Render a .json file to a single HTML
+  render <file.jsonl> [options]  Render a .jsonl or .json file to HTML
   batch-render <dir> [options]   Scan dir for .json/.jsonl files and batch render
   thinking <dir> [options]       Scan dir for .jsonl files with thinking metadata and export
   help                           Show this help message
@@ -358,7 +358,7 @@ async function main(): Promise<void> {
     }
   } else if (command === 'render') {
     if (args.length < 2) {
-      console.error('❌ Error: rounds.json file path required');
+      console.error('❌ Error: rounds.json/jsonl file path required');
       console.log(USAGE);
       process.exit(1);
     }
@@ -369,9 +369,18 @@ async function main(): Promise<void> {
     try {
       await ensureDir(outputDir);
 
-      // Read rounds from JSON file
-      const jsonContent = await fs.readFile(roundsJsonPath, 'utf-8');
-      const rounds = JSON.parse(jsonContent) as Round[];
+      let rounds: Round[];
+
+      // Check file extension to determine parsing method
+      if (roundsJsonPath.endsWith('.jsonl')) {
+        // Read entries from JSONL file and extract rounds
+        const entries = await readSessionFile(roundsJsonPath);
+        rounds = extractRounds(entries);
+      } else {
+        // Read rounds from JSON file
+        const jsonContent = await fs.readFile(roundsJsonPath, 'utf-8');
+        rounds = JSON.parse(jsonContent) as Round[];
+      }
 
       if (rounds.length === 0) {
         console.log('⚠️  No rounds found in file');
@@ -384,7 +393,7 @@ async function main(): Promise<void> {
 
       // Render all rounds to a single HTML file
       const html = renderFileToHtml(rounds, roundsJsonPath, { theme });
-      const basename = path.basename(roundsJsonPath, '.json');
+      const basename = path.basename(roundsJsonPath, path.extname(roundsJsonPath));
       const outputPath = path.join(outputDir, `${basename}.html`);
       await fs.writeFile(outputPath, html, 'utf-8');
 
