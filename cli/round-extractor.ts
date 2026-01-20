@@ -1,5 +1,5 @@
 // Round extraction logic from Claude Code session data
-import type { ClaudeRawEntry, Round, RoundEntry, RoundListOutput } from './types.ts';
+import type { ClaudeRawEntry, Round, RoundEntry, RoundListOutput, ThinkingMetadata } from './types.ts';
 import * as fs from 'node:fs/promises';
 
 export interface SystemEntryInput {
@@ -17,11 +17,7 @@ export interface SystemEntryInput {
   version?: string;
   gitBranch?: string;
   timestamp?: string;
-  thinkingMetadata?: {
-    level?: string;
-    disabled?: boolean;
-    triggers?: unknown[];
-  };
+  thinkingMetadata?: ThinkingMetadata;
   todos?: unknown[];
   [key: string]: unknown;
 }
@@ -383,5 +379,51 @@ export function prependSystemEntries(rounds: Round[], systemEntries: ClaudeRawEn
       ...round,
       entries: [...systemRoundEntries, ...round.entries],
     };
+  });
+}
+
+/**
+ * Check if entries contain thinking metadata
+ * Only returns true if any message content has a non-empty "thinking" field
+ */
+export function hasThinking(entries: ClaudeRawEntry[]): boolean {
+  for (const entry of entries) {
+    // Check message content for "thinking" field
+    const content = entry.message?.content;
+    if (Array.isArray(content)) {
+      for (const item of content) {
+        if (typeof item === 'object' && item !== null && 'thinking' in item) {
+          const thinkingValue = (item as any).thinking;
+          if (thinkingValue && typeof thinkingValue === 'string' && thinkingValue.trim() !== '') {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Extract rounds that contain thinking from a list of rounds
+ */
+export function extractRoundsWithThinking(rounds: Round[]): Round[] {
+  return rounds.filter((round) => {
+    // Check if any entry in this round has thinking
+    for (const entry of round.entries) {
+      const parsedEntry = JSON.parse(entry.rawContent) as ClaudeRawEntry;
+      const content = parsedEntry.message?.content;
+      if (Array.isArray(content)) {
+        for (const item of content) {
+          if (typeof item === 'object' && item !== null && 'thinking' in item) {
+            const thinkingValue = (item as any).thinking;
+            if (thinkingValue && typeof thinkingValue === 'string' && thinkingValue.trim() !== '') {
+              return true;
+            }
+          }
+        }
+      }
+    }
+    return false;
   });
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // CLI for extracting and rendering rounds from Claude Code session data
-import { readSessionFile, extractRounds, listRounds, extractRound, prependSystemEntries, loadSystemEntries, extractContextFields } from './round-extractor.ts';
+import { readSessionFile, extractRounds, listRounds, extractRound, prependSystemEntries, loadSystemEntries, extractContextFields, hasThinking, extractRoundsWithThinking } from './round-extractor.ts';
 import { renderFileToHtml } from './html-renderer.ts';
 import type { RoundListOutput, Round } from './types.ts';
 import * as fs from 'node:fs/promises';
@@ -14,6 +14,7 @@ Commands:
   extract <file> [options]       Extract rounds
   render <rounds.json> [options] Render a .json file to a single HTML
   batch-render <dir> [options]   Scan dir for .json/.jsonl files and batch render
+  thinking <dir> [options]       Scan dir for .jsonl files with thinking metadata and export
   help                           Show this help message
 
 Options for extract:
@@ -27,6 +28,11 @@ Options for render/batch-render:
   -o, --output <dir>             Output directory (default: ./output)
   --theme <theme>                Theme: light or dark (default: light)
   -r, --recursive                Scan directories recursively (batch-render only)
+
+Options for thinking:
+  -o, --output <dir>             Output directory (default: ./output/thinking)
+  -r, --recursive                Scan directories recursively
+  -e, --extract                  Extract thinking rounds to individual .jsonl files
 
 Examples:
   # List all rounds
@@ -55,6 +61,15 @@ Examples:
 
   # Batch render recursively
   pnpm cli batch-render ./data -o ./html -r --theme dark
+
+  # Scan directory for .jsonl files with thinking metadata
+  pnpm cli thinking ./traj-yz-cc-tb -o ./output/thinking
+
+  # Scan recursively for thinking files
+  pnpm cli thinking ./data -r -o ./output/thinking
+
+  # Extract rounds with thinking to .json files
+  pnpm cli thinking ./traj-yz-cc-tb --extract -o ./output/thinking
 `;
 
 function printRoundList(output: RoundListOutput): void {
@@ -91,6 +106,7 @@ async function main(): Promise<void> {
     let outputDir = './output';
     let theme: 'light' | 'dark' = 'light';
     let recursive = false;
+    let extract = false;
 
     for (let i = 0; i < argsRest.length; i++) {
       if (argsRest[i] === '-o' || argsRest[i] === '--output') {
@@ -114,10 +130,12 @@ async function main(): Promise<void> {
         }
       } else if (argsRest[i] === '-r' || argsRest[i] === '--recursive') {
         recursive = true;
+      } else if (argsRest[i] === '-e' || argsRest[i] === '--extract') {
+        extract = true;
       }
     }
 
-    return { outputDir, theme, recursive };
+    return { outputDir, theme, recursive, extract };
   };
 
   // Extract options parsing
@@ -478,6 +496,139 @@ async function main(): Promise<void> {
       console.log('─'.repeat(80));
       console.log(`\n📊 Statistics: ${jsonCount} .json files, ${jsonlCount} .jsonl files`);
       console.log(`✅ Successfully rendered ${successCount}/${files.length} files\n`);
+    } catch (error) {
+      console.error(`❌ Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  } else if (command === 'thinking') {
+    if (args.length < 2) {
+      console.error('❌ Error: Directory path required');
+      console.log(USAGE);
+      process.exit(1);
+    }
+
+    const inputDir = args[1];
+    const { outputDir, recursive, extract } = parseOutputOptions(args.slice(2));
+
+    // Override default output directory for thinking command
+    const thinkingOutputDir = outputDir === './output' ? './output/thinking' : outputDir;
+
+    /**
+     * Recursively scan directory for JSONL files
+     */
+    async function scanJsonlDirectory(dir: string, recursive: boolean): Promise<string[]> {
+      const files: string[] = [];
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+
+        if (entry.isDirectory() && recursive) {
+          const subFiles = await scanJsonlDirectory(fullPath, recursive);
+          files.push(...subFiles);
+        } else if (entry.isFile()) {
+          if (entry.name.endsWith('.jsonl')) {
+            files.push(fullPath);
+          }
+        }
+      }
+
+      return files;
+    }
+
+    try {
+      await ensureDir(thinkingOutputDir);
+
+      // Scan directory for .jsonl files
+      const files = await scanJsonlDirectory(inputDir, recursive);
+
+      if (files.length === 0) {
+        console.log(`⚠️  No .jsonl files found in directory`);
+        process.exit(0);
+      }
+
+      console.log(`\n📁 Scanning ${files.length} .jsonl file(s) for thinking metadata`);
+      console.log(`   Input: ${inputDir}${recursive ? ' (recursive)' : ''}`);
+      console.log(`   Output: ${thinkingOutputDir}`);
+      console.log(`   Mode: ${extract ? 'extract rounds with thinking to .json' : 'copy .jsonl files with thinking'}`);
+      console.log('─'.repeat(80));
+
+      let thinkingFileCount = 0;
+      let processedCount = 0;
+      let totalThinkingRounds = 0;
+
+      for (const filePath of files) {
+        const fileName = path.basename(filePath);
+
+        try {
+          const entries = await readSessionFile(filePath);
+
+          if (hasThinking(entries)) {
+            thinkingFileCount++;
+
+            if (extract) {
+              // Extract rounds with thinking to individual .jsonl files
+              const allRounds = extractRounds(entries);
+              const thinkingRounds = extractRoundsWithThinking(allRounds);
+
+              if (thinkingRounds.length > 0) {
+                totalThinkingRounds += thinkingRounds.length;
+
+                // Create output path
+                const basename = path.basename(fileName, '.jsonl');
+
+                // Create subdirectories if needed
+                const outputSubdir = path.dirname(path.join(thinkingOutputDir, `${basename}.jsonl`));
+                await ensureDir(outputSubdir);
+
+                // Write each thinking round as a separate .jsonl file
+                for (const round of thinkingRounds) {
+                  const outputPath = path.join(thinkingOutputDir, `${basename}.${round.roundNumber}.jsonl`);
+                  const lines: string[] = [];
+
+                  // Write all entries in the round
+                  for (const entry of round.entries) {
+                    lines.push(entry.rawContent);
+                  }
+
+                  await fs.writeFile(outputPath, lines.join('\n'), 'utf-8');
+                  processedCount++;
+                }
+
+                console.log(`  ✅ ${fileName} → ${basename}.${thinkingRounds.map(r => r.roundNumber).join(',')}.jsonl (${thinkingRounds.length} thinking round${thinkingRounds.length === 1 ? '' : 's'})`);
+              }
+            } else {
+              // Copy file to output directory, preserving subdirectory structure
+              const relativePath = path.relative(inputDir, filePath);
+              const outputPath = path.join(thinkingOutputDir, relativePath);
+
+              // Create subdirectories if needed
+              const outputSubdir = path.dirname(outputPath);
+              await ensureDir(outputSubdir);
+
+              // Copy the file
+              await fs.copyFile(filePath, outputPath);
+              processedCount++;
+
+              console.log(`  ✅ ${fileName} → ${relativePath}`);
+            }
+          }
+        } catch (error) {
+          console.log(`  ⚠️  ${fileName}: ${(error as Error).message}`);
+        }
+      }
+
+      console.log('─'.repeat(80));
+      console.log(`\n📊 Statistics: ${thinkingFileCount}/${files.length} files have thinking metadata`);
+      if (extract) {
+        console.log(`✅ Extracted ${totalThinkingRounds} thinking round${totalThinkingRounds === 1 ? '' : 's'} from ${thinkingFileCount} file${thinkingFileCount === 1 ? '' : 's'} to ${thinkingOutputDir}\n`);
+      } else {
+        console.log(`✅ Copied ${processedCount} file(s) to ${thinkingOutputDir}\n`);
+      }
+
+      if (thinkingFileCount === 0) {
+        console.log('💡 Tip: Make sure your .jsonl files contain thinking fields with non-empty content\n');
+      }
     } catch (error) {
       console.error(`❌ Error: ${(error as Error).message}`);
       process.exit(1);

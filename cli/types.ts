@@ -1,4 +1,11 @@
 // Types for CLI round extraction
+
+export interface ThinkingMetadata {
+  level?: string;
+  disabled?: boolean;
+  triggers?: unknown[];
+}
+
 export interface ClaudeRawEntry {
   type: string;
   uuid?: string;
@@ -9,6 +16,7 @@ export interface ClaudeRawEntry {
     content: string | Array<{ type: string; text: string }>;
   };
   isMeta?: boolean;
+  thinkingMetadata?: ThinkingMetadata;
   [key: string]: unknown;
 }
 
